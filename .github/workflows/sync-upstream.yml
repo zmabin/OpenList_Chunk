@@ -44,7 +44,18 @@ jobs:
             "pkg/cron/cron_test.go"
             "conf.d/openlist.conf"
             "go.mod"
+            "Dockerfile"
+            "docker-compose.yml"
+            ".github/workflows/build.yml"
+            ".github/workflows/release.yml"
+            ".github/workflows/docker.yml"
           )
+
+          # Also protect all frontend chunk upload files
+          FRONTEND_CHUNK_FILES=$(find frontend/src/pages/home/uploads -type f 2>/dev/null || true)
+          for file in $FRONTEND_CHUNK_FILES; do
+            CHUNK_FILES+=("$file")
+          done
 
           # Try a clean merge first
           if git merge upstream/main --no-edit 2>/dev/null; then

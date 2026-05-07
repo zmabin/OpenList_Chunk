@@ -5,7 +5,7 @@
 # ---- Frontend build stage ----
 FROM node:22-alpine AS frontend-builder
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git jq curl
 WORKDIR /build
 
 # Clone upstream frontend source
@@ -21,7 +21,7 @@ COPY frontend/src/pages/home/uploads/ ./src/pages/home/uploads/
 RUN FRONTEND_RELEASE=$(curl -fsSL \
       -H "Accept: application/vnd.github.v3+json" \
       "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/latest") && \
-    I18N_URL=$(echo "$FRONTEND_RELEASE" | grep -oP '"browser_download_url":\s*"\K[^"]*' | grep "i18n.tar.gz") && \
+    I18N_URL=$(echo "$FRONTEND_RELEASE" | jq -r '.assets[].browser_download_url' | grep "i18n.tar.gz" | head -1) && \
     if [ -n "$I18N_URL" ]; then \
       curl -fsSL "$I18N_URL" -o i18n.tar.gz && \
       tar -xzf i18n.tar.gz -C src/lang && \
