@@ -17,6 +17,20 @@ RUN corepack enable pnpm
 # Copy chunk-enabled upload files over upstream
 COPY frontend/src/pages/home/uploads/ ./src/pages/home/uploads/
 
+# Download i18n translations from upstream release (only English is in repo)
+RUN FRONTEND_RELEASE=$(curl -fsSL \
+      -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/latest") && \
+    I18N_URL=$(echo "$FRONTEND_RELEASE" | grep -oP '"browser_download_url":\s*"\K[^"]*' | grep "i18n.tar.gz") && \
+    if [ -n "$I18N_URL" ]; then \
+      curl -fsSL "$I18N_URL" -o i18n.tar.gz && \
+      tar -xzf i18n.tar.gz -C src/lang && \
+      rm -f i18n.tar.gz && \
+      echo "i18n translations downloaded"; \
+    else \
+      echo "Warning: i18n.tar.gz not found, building with English only"; \
+    fi
+
 # Install dependencies, add crc-32 (needed by chunk upload), and build
 RUN pnpm install && pnpm add crc-32 && pnpm build
 

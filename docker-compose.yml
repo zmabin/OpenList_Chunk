@@ -1,6 +1,9 @@
 services:
   openlist:
     restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
     volumes:
       - '/etc/openlist:/opt/openlist/data'
     ports:
@@ -11,4 +14,3 @@ services:
       - UMASK=022
       - TZ=Asia/Shanghai
     container_name: openlist
-    image: 'openlistteam/openlist:latest'

@@ -14,98 +14,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unix:
+  build:
     name: Build ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - goos: linux
             goarch: amd64
             name: linux-amd64
+            os: ubuntu-latest
           - goos: linux
             goarch: arm64
             name: linux-arm64
+            os: ubuntu-latest
           - goos: darwin
             goarch: amd64
             name: darwin-amd64
+            os: ubuntu-latest
           - goos: darwin
             goarch: arm64
             name: darwin-arm64
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Build chunk-enabled frontend
-        run: |
-          FRONTEND_DIR=/tmp/openlist-frontend
-          git clone --depth 1 https://github.com/OpenListTeam/OpenList-Frontend.git "$FRONTEND_DIR"
-          cp -r frontend/src/pages/home/uploads/* "$FRONTEND_DIR/src/pages/home/uploads/"
-          cd "$FRONTEND_DIR"
-          pnpm install
-          pnpm add crc-32
-          pnpm build
-          rm -rf "$GITHUB_WORKSPACE/public/dist" 2>/dev/null || true
-          mkdir -p "$GITHUB_WORKSPACE/public/dist"
-          cp -r dist/* "$GITHUB_WORKSPACE/public/dist/"
-          echo "Frontend built successfully"
-
-      - name: Tidy dependencies
-        run: go mod tidy
-
-      - name: Build binary
-        run: |
-          export GOOS=${{ matrix.goos }}
-          export GOARCH=${{ matrix.goarch }}
-          export CGO_ENABLED=0
-          BUILT_AT="$(date +'%F %T %z')"
-          GIT_COMMIT="$(git log --pretty=format:'%h' -1 2>/dev/null || echo 'unknown')"
-          VERSION="$(git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')"
-          LDFLAGS="-w -s \
-            -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=${BUILT_AT}' \
-            -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=OpenList_Chunk Contributors' \
-            -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=${GIT_COMMIT}' \
-            -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${VERSION}' \
-            -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=chunk-custom' \
-          "
-          mkdir -p build
-          go build -ldflags="$LDFLAGS" -tags=jsoniter -o "build/openlist-${{ matrix.name }}" .
-
-      - name: Verify binary
-        run: |
-          file build/openlist-${{ matrix.name }}
-          ls -lh build/openlist-${{ matrix.name }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openlist_${{ github.sha }}_${{ matrix.name }}
-          path: build/*
-
-  windows:
-    name: Build ${{ matrix.name }}
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        include:
+            os: ubuntu-latest
           - goos: windows
             goarch: amd64
             name: windows-amd64
+            os: windows-latest
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            name: windows-arm64
+            os: windows-latest
             ext: .exe
     steps:
       - name: Checkout
@@ -129,10 +68,23 @@ jobs:
       - name: Build chunk-enabled frontend
         shell: bash
         run: |
-          FRONTEND_DIR="/tmp/openlist-frontend"
+          FRONTEND_DIR=/tmp/openlist-frontend
           git clone --depth 1 https://github.com/OpenListTeam/OpenList-Frontend.git "$FRONTEND_DIR"
           cp -r frontend/src/pages/home/uploads/* "$FRONTEND_DIR/src/pages/home/uploads/"
           cd "$FRONTEND_DIR"
+          # Download i18n translations (only English is in repo)
+          FRONTEND_RELEASE=$(curl -fsSL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/latest")
+          I18N_URL=$(echo "$FRONTEND_RELEASE" | grep -oP '"browser_download_url":\s*"\K[^"]*' | grep "i18n.tar.gz")
+          if [ -n "$I18N_URL" ]; then
+            curl -fsSL "$I18N_URL" -o i18n.tar.gz
+            tar -xzf i18n.tar.gz -C src/lang
+            rm -f i18n.tar.gz
+            echo "i18n translations downloaded"
+          else
+            echo "Warning: i18n.tar.gz not found, building with English only"
+          fi
           pnpm install
           pnpm add crc-32
           pnpm build
@@ -163,6 +115,13 @@ jobs:
           "
           mkdir -p build
           go build -ldflags="$LDFLAGS" -tags=jsoniter -o "build/openlist-${{ matrix.name }}${{ matrix.ext }}" .
+
+      - name: Verify binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          file build/openlist-${{ matrix.name }}${{ matrix.ext }}
+          ls -lh build/openlist-${{ matrix.name }}${{ matrix.ext }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
