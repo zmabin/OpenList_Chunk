@@ -2,37 +2,36 @@
 # Build: docker build -t username/openlist-chunk .
 # Usage: docker run -d -p 5244:5244 -v /path/to/data:/opt/openlist/data username/openlist-chunk
 
-# ---- Build stage ----
+# ---- Frontend build stage ----
+FROM node:22-alpine AS frontend-builder
+
+RUN apk add --no-cache git
+WORKDIR /build
+
+# Clone upstream frontend source
+RUN git clone --depth 1 https://github.com/OpenListTeam/OpenList-Frontend.git .
+
+# Enable pnpm
+RUN corepack enable pnpm
+
+# Copy chunk-enabled upload files over upstream
+COPY frontend/src/pages/home/uploads/ ./src/pages/home/uploads/
+
+# Install dependencies, add crc-32 (needed by chunk upload), and build
+RUN pnpm install && pnpm add crc-32 && pnpm build
+
+# ---- Go build stage ----
 FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache git bash curl jq
-
 WORKDIR /build
 
-# Download frontend assets first (for better caching)
-RUN FRONTEND_REPO="OpenListTeam/OpenList-Frontend" && \
-    RELEASE_JSON=$(curl -fsSL --max-time 10 \
-      -H "Accept: application/vnd.github.v3+json" \
-      "https://api.github.com/repos/${FRONTEND_REPO}/releases/tags/rolling" 2>/dev/null) && \
-    if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q "Not Found"; then \
-      RELEASE_JSON=$(curl -fsSL --max-time 10 \
-        -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/${FRONTEND_REPO}/releases/latest"); \
-    fi && \
-    TAR_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[].browser_download_url // empty' | \
-      grep "openlist-frontend-dist" | grep -v "lite" | grep "\.tar\.gz$" | head -1) && \
-    if [ -n "$TAR_URL" ]; then \
-      curl -fsSL "$TAR_URL" -o dist.tar.gz && \
-      mkdir -p /build/public/dist && \
-      tar -xzf dist.tar.gz -C /build/public/dist && \
-      rm -f dist.tar.gz; \
-    fi
-
-# Copy and build
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY ./ ./
+# Use the chunk-enabled frontend built from source
+COPY --from=frontend-builder /build/dist ./public/dist/
 
 RUN go mod tidy && CGO_ENABLED=0 go build \
     -ldflags="-w -s" \
