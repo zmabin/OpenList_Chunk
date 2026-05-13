@@ -87,6 +87,7 @@ jobs:
           else
             echo "Warning: i18n.tar.gz not found, building with English only"
           fi
+          echo 'block-exotic-subdeps=false' > .npmrc
           pnpm install
           pnpm add crc-32
           pnpm build
