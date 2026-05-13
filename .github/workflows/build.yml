@@ -87,9 +87,8 @@ jobs:
           else
             echo "Warning: i18n.tar.gz not found, building with English only"
           fi
-          echo 'block-exotic-subdeps=false' > .npmrc
-          pnpm install
-          pnpm add crc-32
+          pnpm install --config.block-exotic-subdeps=false
+          pnpm add --config.block-exotic-subdeps=false crc-32
           pnpm build
           rm -rf "$GITHUB_WORKSPACE/public/dist" 2>/dev/null || true
           mkdir -p "$GITHUB_WORKSPACE/public/dist"
