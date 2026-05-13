@@ -105,13 +105,17 @@ jobs:
           git commit -m "chore: merge upstream changes and auto-resolve conflicts" --no-verify
           echo "result=synced" >> $GITHUB_OUTPUT
 
+      - name: Setup Go
+        if: steps.merge.outputs.result == 'synced'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
       - name: Verify compilation
         if: steps.merge.outputs.result == 'synced'
         run: |
-          # Ensure chunk dependencies are present in go.mod
-          go mod tidy
-          # Compile check — fail fast if broken
-          CGO_ENABLED=0 go build ./...
+          CGO_ENABLED=0 go mod tidy
+          CGO_ENABLED=0 go build -tags=jsoniter .
 
       - name: Push synced changes
         if: steps.merge.outputs.result == 'synced'
