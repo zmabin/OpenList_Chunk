@@ -97,7 +97,7 @@ jobs:
 
       - name: Tidy dependencies
         shell: bash
-        run: go mod tidy
+        run: CGO_ENABLED=0 go mod tidy
 
       - name: Build binary
         shell: bash

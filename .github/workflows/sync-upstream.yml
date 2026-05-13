@@ -111,7 +111,7 @@ jobs:
           # Ensure chunk dependencies are present in go.mod
           go mod tidy
           # Compile check — fail fast if broken
-          go build ./...
+          CGO_ENABLED=0 go build ./...
 
       - name: Push synced changes
         if: steps.merge.outputs.result == 'synced'
