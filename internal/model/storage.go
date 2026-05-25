@@ -16,7 +16,8 @@ type Storage struct {
 	Addition            string    `json:"addition" gorm:"type:text"` // Additional information, defined in the corresponding driver
 	Remark              string    `json:"remark"`
 	Modified            time.Time `json:"modified"`
-	Disabled            bool      `json:"disabled"` // if disabled
+	Disabled            bool      `json:"disabled"`              // if disabled
+	LoginInterval       int       `json:"login_interval"`        // 定时重新登录间隔（分钟），0 表示禁用
 	DisableIndex        bool      `json:"disable_index"`
 	EnableSign          bool      `json:"enable_sign"`
 	Sort

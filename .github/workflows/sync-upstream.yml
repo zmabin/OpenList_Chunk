@@ -46,7 +46,10 @@ jobs:
           CHUNK_FILES=(
             "server/handles/fsup.go"
             "server/handles/fsup_chunk.go"
+            "server/handles/login_schedule.go"
             "server/router.go"
+            "internal/model/storage.go"
+            "internal/op/storage.go"
             "internal/conf/const.go"
             "internal/bootstrap/data/setting.go"
             "internal/bootstrap/config.go"

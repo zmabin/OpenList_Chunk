@@ -106,6 +106,7 @@ func Init(e *gin.Engine) {
 	_task(auth.Group("/task", middlewares.AuthNotGuest))
 	_sharing(auth.Group("/share", middlewares.AuthNotGuest))
 	admin(auth.Group("/admin", middlewares.AuthAdmin))
+	g.GET("/@manage/login-schedule", handles.LoginSchedulePage)
 	if flags.Debug || flags.Dev {
 		debug(g.Group("/debug"))
 	}
