@@ -1,165 +1,164 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" width="128" height="128" alt="logo" />
 
-  <p><em>OpenList 是一个有韧性、长期治理、社区驱动的 AList 分支，旨在防御基于信任的开源攻击。</em></p>
+  <h1>OpenList_Chunk</h1>
 
-  <img src="https://goreportcard.com/badge/github.com/OpenListTeam/OpenList/v3" alt="latest version" />
-  <a href="https://github.com/OpenListTeam/OpenList/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenListTeam/OpenList" alt="License" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/OpenListTeam/OpenList/build.yml?branch=main" alt="Build status" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/release/OpenListTeam/OpenList" alt="latest version" /></a>
+  <p><em>OpenList 增强分支 — 通过分块上传突破 CDN 上传大小限制</em></p>
 
-  <a href="https://github.com/OpenListTeam/OpenList/discussions"><img src="https://img.shields.io/github/discussions/OpenListTeam/OpenList?color=%23ED8936" alt="discussions" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/downloads/OpenListTeam/OpenList/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/zmabin/OpenList_Chunk/build.yml?branch=main" alt="Build status" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/releases"><img src="https://img.shields.io/github/v/release/zmabin/OpenList_Chunk" alt="latest version" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zmabin/OpenList_Chunk" alt="License" /></a>
 </div>
 
 ---
 
-- [English](./README.md) | 中文 | [日本語](./README_ja.md) | [Dutch](./README_nl.md)
+[English](./README.md) | **中文** | [日本語](./README_ja.md) | [Nederlands](./README_nl.md)
 
-- [贡献指南](./CONTRIBUTING.md)
-- [行为准则](./CODE_OF_CONDUCT.md)
-- [许可证](./LICENSE)
+---
 
-## 免责声明
+## 概述
 
-OpenList 是一个由 OpenList 团队独立维护的开源项目，遵循 AGPL-3.0 许可证，致力于保持完整的代码开放性和修改透明性。
+**OpenList_Chunk** 是 [OpenList](https://github.com/OpenListTeam/OpenList) 的增强分支，重构了上传逻辑，同时保持所有原始数据结构不变。
 
-我们注意到社区中出现了一些与本项目名称相似的第三方项目，如 OpenListApp/OpenListApp，以及部分采用相同或近似命名的收费专有软件。为避免用户误解，现声明如下：
+**核心目标：绕过 CDN 反向代理对上传大小的限制（例如 Cloudflare 免费计划限制单次请求 100MB）。**
 
-- OpenList 与任何第三方衍生项目无官方关联。
+**直接替换，无需额外配置。**
 
-- 本项目的全部软件、代码与服务由 OpenList 团队维护，可在 GitHub 免费获取。
+---
 
-- 项目文档与 API 服务均主要依托于 Cloudflare 提供的公益资源，目前无任何收费计划或商业部署，现有功能使用不涉及任何支出。
+## 核心修改：绕过 CDN 限制
 
-我们尊重社区的自由使用与衍生开发权利，但也强烈呼吁下游项目：
+本项目实现了两种不同的机制来绕过 CDN 上传请求体限制。
 
-- 不应以“OpenList”名义进行冒名宣传或获取商业利益；
+### 1. 表单分块上传
 
-- 不得将基于 OpenList 的代码进行闭源分发或违反 AGPL 许可证条款。
+基于 **"会话管理 + 磁盘缓存 + 流式合并"** 的传统高兼容性分块机制。
 
-为了更好地维护生态健康发展，我们建议：
+- **工作流程**：
+  1. **初始化会话**：前端调用 `POST /api/fs/put/chunk/init`，后端生成唯一的 `upload_id` 并创建会话文件。
+  2. **上传分块**：每个分块以 `multipart/form-data` 格式发送到 `PUT /api/fs/put/chunk`，携带 `upload_id` 和 `index`。
+  3. **CRC32 校验**：服务器计算每个分块的 CRC32，并与客户端 `X-Chunk-CRC32` 请求头对比。
+  4. **虚拟合并**：所有分块上传完成后，前端调用 `POST /api/fs/put/chunk/merge`。后端使用 `io.MultiReader` 顺序读取所有临时文件，零磁盘拷贝，直接流式传输到存储后端。
+  5. **自动清理**：合并后删除临时分块目录。
 
-- 明确注明项目来源，并以符合开源精神的方式选择适当的开源许可证；
+- **优势**：高兼容性，CRC32 完整性校验。
+- **安全性**：每个会话绑定上传用户的身份。
 
-- 如涉及商业用途，请避免使用“OpenList”或任何会产生混淆的方式作为项目名称；
+### 2. 流式分块
 
-- 若需使用本项目位于 OpenListTeam/Logo 下的素材，可在遵守协议的前提下进行修改后使用。
+专为最大性能和最小资源占用设计。核心理念：**"零拷贝管道"**。
 
-感谢您对 OpenList 项目的支持与理解。
+- **工作流程**：
+  1. **前端流式传输**：前端逻辑上分割文件，通过 `PUT` 以 `Raw Binary` 格式发送，携带 `Content-Range` 请求头。
+  2. **io.Pipe 桥接**：第一个分块到达时，后端创建零缓冲管道（`io.Pipe`），并立即启动从管道读取的存储驱动上传任务。
+  3. **零拷贝数据流**：后续分块写入同一管道。数据直接从"前端请求"经"服务器内存"流向"云存储"。
+  4. **自动完成**：最后一个分块后，管道关闭，上传完成。
 
-## 功能
+- **优势**：
+  - **零磁盘占用**：无临时分块，无磁盘合并。
+  - **极低内存**：通过管道背压，内存保持在 KB 级别。
+  - **高性能**：直接流式传输，无 I/O 瓶颈。
+- **注意**：服务器充当同步管道；云存储速度慢时会通过 TCP 反压客户端。
 
-- [x] 多种存储
-  - [x] 本地存储
-  - [x] [阿里云盘](https://www.alipan.com)
-  - [x] OneDrive / Sharepoint ([国际版](https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage), [中国](https://portal.partner.microsoftonline.cn), DE, US)
-  - [x] [天翼云盘](https://cloud.189.cn)（个人、家庭）
-  - [x] [GoogleDrive](https://drive.google.com)
-  - [x] [123云盘](https://www.123pan.com)
-  - [x] [FTP / SFTP](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
-  - [x] [PikPak](https://www.mypikpak.com)
-  - [x] [S3](https://aws.amazon.com/s3)
-  - [x] [Seafile](https://seafile.com)
-  - [x] [又拍云对象存储](https://www.upyun.com/products/file-storage)
-  - [x] [WebDAV](https://en.wikipedia.org/wiki/WebDAV)
-  - [x] Teambition([中国](https://www.teambition.com), [国际](https://us.teambition.com))
-  - [x] [MediaFire](https://www.mediafire.com)
-  - [x] [分秒帧](https://www.mediatrack.cn)
-  - [x] [ProtonDrive](https://proton.me/drive)
-  - [x] [和彩云](https://yun.139.com)（个人、家庭、群组）
-  - [x] [YandexDisk](https://disk.yandex.com)
-  - [x] [百度网盘](http://pan.baidu.com)
-  - [x] [Terabox](https://www.terabox.com/main)
-  - [x] [UC网盘](https://drive.uc.cn)
-  - [x] [夸克网盘](https://pan.quark.cn)
-  - [x] [迅雷网盘](https://pan.xunlei.com)
-  - [x] [蓝奏云](https://www.lanzou.com)
-  - [x] [蓝奏云优享版](https://www.ilanzou.com)
-  - [x] [Google 相册](https://photos.google.com)
-  - [x] [Mega.nz](https://mega.nz)
-  - [x] [百度相册](https://photo.baidu.com)
-  - [x] [SMB](https://en.wikipedia.org/wiki/Server_Message_Block)
-  - [x] [115](https://115.com)
-  - [x] [Cloudreve](https://cloudreve.org)
-  - [x] [Dropbox](https://www.dropbox.com)
-  - [x] [飞机盘](https://www.feijipan.com)
-  - [x] [多吉云](https://www.dogecloud.com/product/oss)
-  - [x] [Azure Blob Storage](https://azure.microsoft.com/products/storage/blobs)
-  - [x] [超星](https://www.chaoxing.com)
-  - [x] [CNB](https://cnb.cool/)
-  - [x] [Degoo](https://degoo.com)
-  - [x] [豆包](https://www.doubao.com)
-  - [x] [Febbox](https://www.febbox.com)
-  - [x] [GitHub](https://github.com)
-  - [x] [OpenList](https://github.com/OpenListTeam/OpenList)
-  - [x] [Teldrive](https://github.com/tgdrive/teldrive)
-  - [x] [微云](https://www.weiyun.com)
-- [x] 部署方便，开箱即用
-- [x] 文件预览（PDF、markdown、代码、纯文本等）
-- [x] 画廊模式下的图片预览
-- [x] 视频和音频预览，支持歌词和字幕
-- [x] Office 文档预览（docx、pptx、xlsx 等）
-- [x] `README.md` 预览渲染
-- [x] 文件永久链接复制和直接文件下载
-- [x] 黑暗模式
-- [x] 国际化
-- [x] 受保护的路由（密码保护和认证）
-- [x] WebDAV
-- [x] Docker 部署
-- [x] Cloudflare Workers 代理
-- [x] 文件/文件夹打包下载
-- [x] 网页上传（可允许访客上传）、删除、新建文件夹、重命名、移动和复制
-- [x] 离线下载
-- [x] 跨存储复制文件
-- [x] 单文件多线程下载/流式加速
+---
 
-## 文档
+## 路由变更
 
-- 📘 [文档](https://doc.oplist.org)
-- 🌏 [中国镜像](https://doc.oplist.org.cn)
-- ⚖️ [使用条款](https://doc.oplist.org/terms)
-- 🔒 [隐私政策](https://doc.oplist.org/privacy)
+| 路由 | 方法 | 功能 | 认证 |
+|------|------|------|------|
+| `/api/fs/put/chunk/init` | POST | 初始化分块会话 | `FsUp` 中间件 |
+| `/api/fs/put/chunk` | PUT | 上传单个分块 | `FsUp` + 速率限制 |
+| `/api/fs/put/chunk/merge` | POST | 合并分块并上传 | `FsUp` + 速率限制 |
+| `/api/fs/put` | PUT | 流式上传（支持 Content-Range） | `FsUp` + 速率限制 |
 
-## Demo
+---
 
-- 🌎 [全球 Demo](https://demo.oplist.org)
-- 🇨🇳 [中国 Demo](https://demo.oplist.org.cn)
+## 部署指南
 
-## 讨论
+### 直接替换（完全兼容 OpenList 数据）
 
-如有一般性问题请前往 [*Discussions*](https://github.com/OpenListTeam/OpenList/discussions) 讨论区，***Issues* 仅用于错误报告和功能请求。**
+1. 停止 OpenList 服务
+2. 备份原始 `openlist` 二进制文件
+3. 替换为编译后的 `openlist` 二进制文件
+4. 启动服务
 
-## 赞助者
+```bash
+systemctl stop openlist
+cp openlist /opt/openlist/openlist
+chmod +x /opt/openlist/openlist
+systemctl start openlist
+```
 
-[![VPS.Town](https://vps.town/static/images/sponsor.png)](https://vps.town "VPS.Town - Trust, Effortlessly. Your Cloud, Reimagined.")
+### 从源码构建
 
-## 许可证
+```bash
+git clone https://github.com/zmabin/OpenList_Chunk.git
+cd OpenList_Chunk
 
-`OpenList` 是基于 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) 许可证的开源软件。
+# 下载前端资源
+bash build.sh dev web
 
-## 免责声明
+# 构建（Linux）
+export CGO_ENABLED=0
+go build -o openlist -tags=jsoniter -ldflags="-s -w" .
 
-- 本项目为免费开源软件，旨在通过网盘便捷分享文件，主要用于 Go 语言的下载与学习。
-- 使用本软件时请遵守相关法律法规，严禁任何形式的滥用。
-- 本软件基于官方 SDK 或 API 实现，未对其行为进行任何修改、破坏或干扰。
-- 仅进行 HTTP 302 跳转或流量转发，不拦截、存储或篡改任何用户数据。
-- 本项目与任何官方平台或服务提供商无关。
-- 本软件按“原样”提供，不附带任何明示或暗示的担保，包括但不限于适销性或特定用途的适用性。
-- 维护者不对因使用或无法使用本软件而导致的任何直接或间接损失负责。
-- 您需自行承担使用本软件的所有风险，包括但不限于账号被封、下载限速等。
-- 本项目遵循 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) 许可证，详情请参见 [LICENSE](./LICENSE) 文件。
+# 构建（Windows）
+set CGO_ENABLED=0
+go build -o openlist.exe -tags=jsoniter -ldflags="-s -w" .
+```
 
-## 联系我们
+### Docker
 
-- [@GitHub](https://github.com/OpenListTeam)
-- [Telegram 交流群](https://t.me/OpenListTeam)
-- [Telegram 频道](https://t.me/OpenListOfficial)
+```bash
+# ghcr.io
+docker pull ghcr.io/zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data ghcr.io/zmabin/openlist-chunk:latest
 
-## 贡献者
+# Docker Hub
+docker pull zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data zmabin/openlist-chunk:latest
+```
 
-我们衷心感谢原项目 [AlistGo/alist](https://github.com/AlistGo/alist) 的作者 [Xhofe](https://github.com/Xhofe) 及所有其他贡献者。
+### Nginx 代理配置
 
-感谢这些优秀的人：
+完整配置参考 `conf.d/openlist.conf`。关键设置：
 
-[![Contributors](https://contrib.rocks/image?repo=OpenListTeam/OpenList)](https://github.com/OpenListTeam/OpenList/graphs/contributors)
+```nginx
+client_max_body_size 102400m;       # 最大上传 100GB
+proxy_request_buffering off;         # 禁用请求缓冲（流式传输必需）
+proxy_send_timeout 86400s;           # 24 小时超时
+```
+
+---
+
+## 设置项
+
+| 键名 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `chunked_upload_mode` | 选择 | `auto` | 分块模式：`auto` / `disabled` |
+| `chunked_upload_chunk_size` | 数字 | `95` | 分块阈值（MB），超过此大小的文件将自动分块 |
+
+---
+
+## 路线图
+
+- [x] **表单分块上传**：基于会话的多部分分块 + 流式合并
+- [x] **流式分块**：基于 Content-Range 的零拷贝管道分块
+- [x] **定时存储重登录**：为每个存储配置定时强制密码重认证保活
+
+---
+
+## 致谢
+
+本项目参考并借鉴了以下优秀项目的工作：
+
+- 感谢 [LusiyAvA/openlist-chunk](https://github.com/LusiyAvA/openlist-chunk) 提供分块上传的核心思路和实现参考
+- 感谢 [OpenListTeam/OpenList](https://github.com/OpenListTeam/OpenList) 提供稳定可靠的基础框架
+
+---
+
+## 支持
+
+如果这个项目对你有帮助，请给一个 Star！
+
+发现 Bug 或有建议？欢迎提交 [Issue](https://github.com/zmabin/OpenList_Chunk/issues)。

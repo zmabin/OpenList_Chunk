@@ -1,165 +1,164 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" width="128" height="128" alt="logo" />
 
-  <p><em>OpenList is a resilient, long-term governance, community-driven fork of AList — built to defend open source against trust-based attacks.</em></p>
+  <h1>OpenList_Chunk</h1>
 
-  <img src="https://goreportcard.com/badge/github.com/OpenListTeam/OpenList/v3" alt="latest version" />
-  <a href="https://github.com/OpenListTeam/OpenList/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenListTeam/OpenList" alt="License" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/OpenListTeam/OpenList/build.yml?branch=main" alt="Build status" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/release/OpenListTeam/OpenList" alt="latest version" /></a>
+  <p><em>Enhanced fork of OpenList — Bypass CDN upload size limits with chunked upload support</em></p>
 
-  <a href="https://github.com/OpenListTeam/OpenList/discussions"><img src="https://img.shields.io/github/discussions/OpenListTeam/OpenList?color=%23ED8936" alt="discussions" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/downloads/OpenListTeam/OpenList/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/zmabin/OpenList_Chunk/build.yml?branch=main" alt="Build status" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/releases"><img src="https://img.shields.io/github/v/release/zmabin/OpenList_Chunk" alt="latest version" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zmabin/OpenList_Chunk" alt="License" /></a>
 </div>
 
 ---
 
-- English | [中文](./README_cn.md) | [日本語](./README_ja.md) | [Dutch](./README_nl.md)
+**English** | [中文](./README_cn.md) | [日本語](./README_ja.md) | [Nederlands](./README_nl.md)
 
-- [Contributing](./CONTRIBUTING.md)
-- [CODE OF CONDUCT](./CODE_OF_CONDUCT.md)
-- [LICENSE](./LICENSE)
+---
 
-## Disclaimer
+## Overview
 
-OpenList is an open-source project independently maintained by the OpenList Team, following the AGPL-3.0 license and committed to maintaining complete code openness and modification transparency.
+**OpenList_Chunk** is an enhanced fork of [OpenList](https://github.com/OpenListTeam/OpenList) that refactors the upload logic while keeping all original data structures intact.
 
-We have noticed the emergence of some third-party projects in the community with names similar to this project, such as OpenListApp/OpenListApp, as well as some paid proprietary software using the same or similar naming. To avoid user confusion, we hereby declare:
+**Core goal: Bypass upload size limits imposed by CDN reverse proxies (e.g., Cloudflare Free plan limits single requests to 100MB).**
 
-- OpenList has no official association with any third-party derivative projects.
+**Drop-in replacement — no hassle.**
 
-- All software, code, and services of this project are maintained by the OpenList Team and are freely available on GitHub.
+---
 
-- Project documentation and API services primarily rely on charitable resources provided by Cloudflare. There are currently no paid plans or commercial deployments, and the use of existing features does not involve any costs.
+## Core Modifications: Bypassing CDN Limits
 
-We respect the community's rights to free use and derivative development, but we also strongly urge downstream projects:
+This project implements two distinct mechanisms to bypass CDN upload body limits.
 
-- Should not use the "OpenList" name for impersonation promotion or commercial gain;
+### 1. Form Chunked Upload
 
-- Must not distribute OpenList-based code in a closed-source manner or violate AGPL license terms.
+A traditional high-compatibility chunking mechanism based on **"session management + disk cache + streaming merge"**.
 
-To better maintain healthy ecosystem development, we recommend:
+- **Workflow**:
+  1. **Init session**: Frontend calls `POST /api/fs/put/chunk/init`, backend generates a unique `upload_id` and creates a session file.
+  2. **Upload chunks**: Each chunk is sent as `multipart/form-data` to `PUT /api/fs/put/chunk` with `upload_id` and `index`.
+  3. **CRC32 verification**: Server computes CRC32 for each chunk and compares against the `X-Chunk-CRC32` header from the client.
+  4. **Virtual merge**: After all chunks are uploaded, frontend calls `POST /api/fs/put/chunk/merge`. Backend uses `io.MultiReader` to read all temp files sequentially with zero disk copy, streaming directly to the storage backend.
+  5. **Auto cleanup**: Temp chunk directory is deleted after merge.
 
-- Clearly indicate the project source and choose appropriate open-source licenses in accordance with the open-source spirit;
+- **Advantages**: High compatibility, CRC32 integrity verification.
+- **Security**: Each session is bound to the uploading user's identity.
 
-- If involving commercial use, please avoid using "OpenList" or any confusing naming as the project name;
+### 2. Stream Chunking
 
-- If you need to use materials located under OpenListTeam/Logo, you may modify and use them under compliance with the agreement.
+Designed for maximum performance and minimal resource usage. Core concept: **"zero-copy pipe"**.
 
-Thank you for your support and understanding of the OpenList project.
+- **Workflow**:
+  1. **Frontend streaming**: Frontend logically splits the file and sends `Raw Binary` via `PUT` with `Content-Range` headers.
+  2. **io.Pipe bridge**: On the first chunk, the backend creates a zero-buffer pipe (`io.Pipe`) and immediately starts the storage driver upload task reading from the pipe.
+  3. **Zero-copy flow**: Subsequent chunks write to the same pipe. Data flows directly from "frontend request" through "server memory" to "cloud storage".
+  4. **Auto complete**: After the last chunk, the pipe is closed and upload finishes.
 
-## Features
+- **Advantages**:
+  - **Zero disk usage**: No temp chunks, no disk merge.
+  - **Minimal memory**: Through pipe back-pressure, memory stays at KB-level.
+  - **High performance**: Direct streaming with no I/O bottleneck.
+- **Note**: Server acts as a sync pipe; slow cloud speeds will back-pressure the client via TCP.
 
-- [x] Multiple storages
-  - [x] Local storage
-  - [x] [Aliyundrive](https://www.alipan.com)
-  - [x] OneDrive / Sharepoint ([Global](https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage), [CN](https://portal.partner.microsoftonline.cn), DE, US)
-  - [x] [189cloud](https://cloud.189.cn) (Personal, Family)
-  - [x] [GoogleDrive](https://drive.google.com)
-  - [x] [123pan](https://www.123pan.com)
-  - [x] [FTP / SFTP](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
-  - [x] [PikPak](https://www.mypikpak.com)
-  - [x] [S3](https://aws.amazon.com/s3)
-  - [x] [Seafile](https://seafile.com)
-  - [x] [UPYUN Storage Service](https://www.upyun.com/products/file-storage)
-  - [x] [WebDAV](https://en.wikipedia.org/wiki/WebDAV)
-  - [x] Teambition([China](https://www.teambition.com), [International](https://us.teambition.com))
-  - [x] [MediaFire](https://www.mediafire.com)
-  - [x] [Mediatrack](https://www.mediatrack.cn)
-  - [x] [ProtonDrive](https://proton.me/drive)
-  - [x] [139yun](https://yun.139.com) (Personal, Family, Group)
-  - [x] [YandexDisk](https://disk.yandex.com)
-  - [x] [BaiduNetdisk](http://pan.baidu.com)
-  - [x] [Terabox](https://www.terabox.com/main)
-  - [x] [UC](https://drive.uc.cn)
-  - [x] [Quark](https://pan.quark.cn)
-  - [x] [Thunder](https://pan.xunlei.com)
-  - [x] [Lanzou](https://www.lanzou.com)
-  - [x] [ILanzou](https://www.ilanzou.com)
-  - [x] [Google photo](https://photos.google.com)
-  - [x] [Mega.nz](https://mega.nz)
-  - [x] [Baidu photo](https://photo.baidu.com)
-  - [x] [SMB](https://en.wikipedia.org/wiki/Server_Message_Block)
-  - [x] [115](https://115.com)
-  - [X] [Cloudreve](https://cloudreve.org)
-  - [x] [Dropbox](https://www.dropbox.com)
-  - [x] [FeijiPan](https://www.feijipan.com)
-  - [x] [dogecloud](https://www.dogecloud.com/product/oss)
-  - [x] [Azure Blob Storage](https://azure.microsoft.com/products/storage/blobs)
-  - [x] [Chaoxing](https://www.chaoxing.com)
-  - [x] [CNB](https://cnb.cool/)
-  - [x] [Degoo](https://degoo.com)
-  - [x] [Doubao](https://www.doubao.com)
-  - [x] [Febbox](https://www.febbox.com)
-  - [x] [GitHub](https://github.com)
-  - [x] [OpenList](https://github.com/OpenListTeam/OpenList)
-  - [x] [Teldrive](https://github.com/tgdrive/teldrive)
-  - [x] [Weiyun](https://www.weiyun.com)
-- [x] Easy to deploy and out-of-the-box
-- [x] File preview (PDF, markdown, code, plain text, ...)
-- [x] Image preview in gallery mode
-- [x] Video and audio preview, support lyrics and subtitles
-- [x] Office documents preview (docx, pptx, xlsx, ...)
-- [x] `README.md` preview rendering
-- [x] File permalink copy and direct file download
-- [x] Dark mode
-- [x] I18n
-- [x] Protected routes (password protection and authentication)
-- [x] WebDAV
-- [x] Docker Deploy
-- [x] Cloudflare Workers proxy
-- [x] File/Folder package download
-- [x] Web upload(Can allow visitors to upload), delete, mkdir, rename, move and copy
-- [x] Offline download
-- [x] Copy files between two storage
-- [x] Multi-thread downloading acceleration for single-thread download/stream
+---
 
-## Document
+## Route Changes
 
-- 📘 [Docs](https://doc.oplist.org)
-- 🌏 [CN Mirror](https://doc.oplist.org.cn)
-- ⚖️ [Terms of Use](https://doc.oplist.org/terms)
-- 🔒 [Privacy Policy](https://doc.oplist.org/privacy)
+| Route | Method | Function | Auth |
+|-------|--------|----------|------|
+| `/api/fs/put/chunk/init` | POST | Initialize chunk session | `FsUp` middleware |
+| `/api/fs/put/chunk` | PUT | Upload a single chunk | `FsUp` + rate limit |
+| `/api/fs/put/chunk/merge` | POST | Merge chunks and upload | `FsUp` + rate limit |
+| `/api/fs/put` | PUT | Stream upload (supports Content-Range) | `FsUp` + rate limit |
 
-## Demo
+---
 
-- 🌎 [Global Demo](https://demo.oplist.org)
-- 🇨🇳 [CN Demo](https://demo.oplist.org.cn)
+## Deployment Guide
 
-## Discussion
+### Direct Replacement (Fully Compatible with OpenList Data)
 
-Please refer to [*Discussions*](https://github.com/OpenListTeam/OpenList/discussions) for raising general questions, ***Issues* is for bug reports and feature requests only.**
+1. Stop your OpenList service
+2. Backup the original `openlist` binary
+3. Replace with the compiled `openlist` binary
+4. Start the service
 
-## Sponsor
+```bash
+systemctl stop openlist
+cp openlist /opt/openlist/openlist
+chmod +x /opt/openlist/openlist
+systemctl start openlist
+```
 
-[![VPS.Town](https://vps.town/static/images/sponsor.png)](https://vps.town "VPS.Town - Trust, Effortlessly. Your Cloud, Reimagined.")
+### Build from Source
 
-## License
+```bash
+git clone https://github.com/zmabin/OpenList_Chunk.git
+cd OpenList_Chunk
 
-The `OpenList` is open-source software licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) license.
+# Download frontend assets
+bash build.sh dev web
 
-## Disclaimer
+# Build (Linux)
+export CGO_ENABLED=0
+go build -o openlist -tags=jsoniter -ldflags="-s -w" .
 
-- This project is a free and open-source software designed to facilitate file sharing via net disks, primarily intended to support the downloading and learning of the Go programming language.
-- Please comply with all applicable laws and regulations when using this software. Any form of misuse is strictly prohibited.
-- The software is based on official SDKs or APIs without any modification, disruption, or interference with their behavior.
-- It only performs HTTP 302 redirects or traffic forwarding, and does not intercept, store, or tamper with any user data.
-- This project is not affiliated with any official platform or service provider.
-- The software is provided "as is", without any warranties of any kind, either express or implied, including but not limited to warranties of merchantability or fitness for a particular purpose.
-- The maintainers are not liable for any direct or indirect damages arising from the use of, or inability to use, this software.
-- You are solely responsible for any risks associated with using this software, including but not limited to account bans or download speed limitations.
-- This project is licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) License. Please see the [LICENSE](./LICENSE) file for details.
+# Build (Windows)
+set CGO_ENABLED=0
+go build -o openlist.exe -tags=jsoniter -ldflags="-s -w" .
+```
 
-## Contact Us
+### Docker
 
-- [@GitHub](https://github.com/OpenListTeam)
-- [Telegram Group](https://t.me/OpenListTeam)
-- [Telegram Channel](https://t.me/OpenListOfficial)
+```bash
+# ghcr.io
+docker pull ghcr.io/zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data ghcr.io/zmabin/openlist-chunk:latest
 
-## Contributors
+# Docker Hub
+docker pull zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data zmabin/openlist-chunk:latest
+```
 
-We sincerely thank the author [Xhofe](https://github.com/Xhofe) of the original project [AlistGo/alist](https://github.com/AlistGo/alist) and all other contributors.
+### Nginx Proxy Config
 
-Thanks goes to these wonderful people:
+Refer to `conf.d/openlist.conf` for the full config. Key settings:
 
-[![Contributors](https://contrib.rocks/image?repo=OpenListTeam/OpenList)](https://github.com/OpenListTeam/OpenList/graphs/contributors)
+```nginx
+client_max_body_size 102400m;       # 100GB max upload
+proxy_request_buffering off;         # Disable request buffering (required for streaming)
+proxy_send_timeout 86400s;           # 24-hour timeout
+```
+
+---
+
+## Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `chunked_upload_mode` | Select | `auto` | Chunk mode: `auto` / `disabled` |
+| `chunked_upload_chunk_size` | Number | `95` | Chunk threshold (MB), files larger than this will be auto-chunked |
+
+---
+
+## Roadmap
+
+- [x] **Form Chunked Upload**: Session-based multipart chunk + streaming merge
+- [x] **Stream Chunking**: Content-Range based zero-copy pipe chunking
+- [x] **Scheduled Storage Re-login**: Per-storage keep-alive via forced password re-authentication
+
+---
+
+## Acknowledgments
+
+This project references and builds upon the work of the following excellent projects:
+
+- Thanks to [LusiyAvA/openlist-chunk](https://github.com/LusiyAvA/openlist-chunk) for the core ideas and implementation reference for chunked upload
+- Thanks to [OpenListTeam/OpenList](https://github.com/OpenListTeam/OpenList) for providing a stable and reliable foundation framework
+
+---
+
+## Support
+
+If this project helps you, please consider giving it a Star!
+
+Found a bug or have a suggestion? Feel free to open an [Issue](https://github.com/zmabin/OpenList_Chunk/issues).

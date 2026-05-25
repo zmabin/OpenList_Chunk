@@ -42,7 +42,26 @@ jobs:
       - name: Merge upstream and auto-resolve conflicts
         id: merge
         run: |
-          # List of chunk-specific files that should always keep our fork's version
+          # Save our fork's SHA to restore fork-only files after merge
+          OUR_SHA=$(git rev-parse HEAD)
+
+          # Files that are fork-specific and must never come from upstream
+          FORK_ONLY_FILES=(
+            "CLAUDE.md"
+            "Dockerfile"
+            "docker-compose.yml"
+            ".github/workflows/build.yml"
+            ".github/workflows/release.yml"
+            ".github/workflows/docker.yml"
+            ".github/workflows/sync-upstream.yml"
+          )
+
+          # Protect all README files (README.md, README_cn.md, README_ja.md, etc.)
+          for readmefile in README*.md; do
+            FORK_ONLY_FILES+=("$readmefile")
+          done
+
+          # Files that should keep our version on conflict
           CHUNK_FILES=(
             "server/handles/fsup.go"
             "server/handles/fsup_chunk.go"
@@ -56,12 +75,6 @@ jobs:
             "pkg/cron/cron.go"
             "pkg/cron/cron_test.go"
             "conf.d/openlist.conf"
-            "Dockerfile"
-            "docker-compose.yml"
-            ".github/workflows/build.yml"
-            ".github/workflows/release.yml"
-            ".github/workflows/docker.yml"
-            ".github/workflows/sync-upstream.yml"
           )
 
           # Also protect all frontend chunk upload files
@@ -73,39 +86,53 @@ jobs:
           # Try a clean merge first
           if git merge upstream/main --no-edit; then
             echo "Merge succeeded without conflicts."
-            echo "result=synced" >> $GITHUB_OUTPUT
-            exit 0
+          else
+            echo "Conflicts detected. Auto-resolving..."
+
+            # Restore our chunk files (keep fork version)
+            for file in "${CHUNK_FILES[@]}"; do
+              if git ls-files -u -- "$file" | grep -q "^"; then
+                echo "Keeping fork version of: $file"
+                git checkout --ours "$file" 2>/dev/null
+                git add "$file"
+              fi
+            done
+
+            # Accept upstream for remaining conflicting files
+            CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null)
+            if [ -n "$CONFLICTS" ]; then
+              for file in $CONFLICTS; do
+                echo "Accepting upstream version of: $file"
+                git checkout --theirs "$file"
+                git add "$file"
+              done
+            fi
+
+            # Verify no conflicts remain
+            if [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]; then
+              echo "ERROR: Unresolved conflicts remaining!"
+              git status
+              exit 1
+            fi
+
+            git commit -m "chore: merge upstream changes and auto-resolve conflicts" --no-verify
           fi
 
-          echo "Conflicts detected. Auto-resolving..."
-
-          # Restore our chunk files (keep fork version)
-          for file in "${CHUNK_FILES[@]}"; do
-            if git ls-files -u -- "$file" | grep -q "^"; then
-              echo "Keeping fork version of: $file"
-              git checkout --ours "$file" 2>/dev/null
+          # Always restore fork-only files (regardless of merge result)
+          NEED_AMEND=false
+          for file in "${FORK_ONLY_FILES[@]}"; do
+            if ! git diff --quiet "$OUR_SHA" -- "$file" 2>/dev/null; then
+              echo "Restoring fork version of: $file"
+              git checkout "$OUR_SHA" -- "$file"
               git add "$file"
+              NEED_AMEND=true
             fi
           done
 
-          # Accept upstream for remaining conflicting files
-          CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null)
-          if [ -n "$CONFLICTS" ]; then
-            for file in $CONFLICTS; do
-              echo "Accepting upstream version of: $file"
-              git checkout --theirs "$file"
-              git add "$file"
-            done
+          if [ "$NEED_AMEND" = true ]; then
+            git commit --amend --no-edit --no-verify
           fi
 
-          # Verify no conflicts remain
-          if [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]; then
-            echo "ERROR: Unresolved conflicts remaining!"
-            git status
-            exit 1
-          fi
-
-          git commit -m "chore: merge upstream changes and auto-resolve conflicts" --no-verify
           echo "result=synced" >> $GITHUB_OUTPUT
 
       - name: Setup Go

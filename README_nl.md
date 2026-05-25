@@ -1,165 +1,164 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" width="128" height="128" alt="logo" />
 
-  <p><em>OpenList is een veerkrachtige, langetermijn, door de gemeenschap geleide fork van AList — gebouwd om open source te beschermen tegen op vertrouwen gebaseerde aanvallen.</em></p>
+  <h1>OpenList_Chunk</h1>
 
-  <img src="https://goreportcard.com/badge/github.com/OpenListTeam/OpenList/v3" alt="latest version" />
-  <a href="https://github.com/OpenListTeam/OpenList/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenListTeam/OpenList" alt="License" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/OpenListTeam/OpenList/build.yml?branch=main" alt="Build status" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/release/OpenListTeam/OpenList" alt="latest version" /></a>
+  <p><em>Verbeterde fork van OpenList — Omzeil CDN upload limieten met chunked upload ondersteuning</em></p>
 
-  <a href="https://github.com/OpenListTeam/OpenList/discussions"><img src="https://img.shields.io/github/discussions/OpenListTeam/OpenList?color=%23ED8936" alt="discussions" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/downloads/OpenListTeam/OpenList/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/zmabin/OpenList_Chunk/build.yml?branch=main" alt="Build status" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/releases"><img src="https://img.shields.io/github/v/release/zmabin/OpenList_Chunk" alt="latest version" /></a>
+  <a href="https://github.com/zmabin/OpenList_Chunk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zmabin/OpenList_Chunk" alt="License" /></a>
 </div>
 
 ---
 
-- [English](./README.md) | [中文](./README_cn.md) | [日本語](./README_ja.md) | Dutch
+[English](./README.md) | [中文](./README_cn.md) | [日本語](./README_ja.md) | **Nederlands**
 
-- [Bijdragen](./CONTRIBUTING.md)
-- [Gedragscode](./CODE_OF_CONDUCT.md)
-- [Licentie](./LICENSE)
+---
 
-## Disclaimer
+## Overzicht
 
-OpenList is een open-source project dat onafhankelijk wordt onderhouden door het OpenList Team, volgend op de AGPL-3.0 licentie en toegewijd aan het behouden van volledige code openheid en transparantie van wijzigingen.
+**OpenList_Chunk** is een verbeterde fork van [OpenList](https://github.com/OpenListTeam/OpenList) die de upload logica herstructureert terwijl alle originele datastructuren intact blijven.
 
-We hebben gemerkt dat er in de gemeenschap enkele derde partij projecten zijn verschenen met namen vergelijkbaar met dit project, zoals OpenListApp/OpenListApp, evenals enkele betaalde eigendomssoftware die dezelfde of soortgelijke naamgeving gebruikt. Om verwarring bij gebruikers te voorkomen, verklaren we hierbij:
+**Kern doel: Omzeil upload limieten opgelegd door CDN reverse proxies (bijv. Cloudflare Free plan limiteert enkele verzoeken tot 100MB).**
 
-- OpenList heeft geen officiële associatie met enige derde partij afgeleide projecten.
+**Direct vervanging — geen gedoe.**
 
-- Alle software, code en diensten van dit project worden onderhouden door het OpenList Team en zijn gratis beschikbaar op GitHub.
+---
 
-- Projectdocumentatie en API diensten zijn voornamelijk afhankelijk van liefdadigheidsbronnen verstrekt door Cloudflare. Er zijn momenteel geen betaalplannen of commerciële implementaties, en het gebruik van bestaande functies brengt geen kosten met zich mee.
+## Kern Wijzigingen: CDN Limieten Omzeilen
 
-We respecteren de rechten van de gemeenschap voor vrij gebruik en afgeleide ontwikkeling, maar we roepen downstream projecten ook ten zeerste op:
+Dit project implementeert twee verschillende mechanismen om CDN upload body limieten te omzeilen.
 
-- Mogen niet de "OpenList" naam gebruiken voor namaakpromotie of commercieel gewin;
+### 1. Form Chunked Upload
 
-- Mogen OpenList-gebaseerde code niet distribueren op een closed-source manier of AGPL licentievoorwaarden schenden.
+Een traditioneel hoog-compatibel chunking mechanisme gebaseerd op **"sessiebeheer + schijfcache + streaming merge"**.
 
-Om een gezonde ecosysteemontwikkeling beter te onderhouden, bevelen we aan:
+- **Workflow**:
+  1. **Init sessie**: Frontend roept `POST /api/fs/put/chunk/init` aan, backend genereert een unieke `upload_id` en maakt een sessiebestand aan.
+  2. **Upload chunks**: Elke chunk wordt als `multipart/form-data` verzonden naar `PUT /api/fs/put/chunk` met `upload_id` en `index`.
+  3. **CRC32 verificatie**: Server berekent CRC32 voor elke chunk en vergelijkt met de `X-Chunk-CRC32` header van de client.
+  4. **Virtuele merge**: Na het uploaden van alle chunks roept de frontend `POST /api/fs/put/chunk/merge` aan. Backend gebruikt `io.MultiReader` om alle tijdelijke bestanden sequentieel te lezen zonder schijfkopie, direct streamend naar de opslag backend.
+  5. **Automatische opruiming**: Tijdelijke chunk directory wordt verwijderd na merge.
 
-- Duidelijk de projectbron aangeven en passende open-source licenties kiezen in overeenstemming met de open-source geest;
+- **Voordelen**: Hoge compatibiliteit, CRC32 integriteitsverificatie.
+- **Beveiliging**: Elke sessie is gebonden aan de identiteit van de uploader.
 
-- Bij commercieel gebruik, vermijd het gebruik van "OpenList" of enige verwarrende naamgeving als projectnaam;
+### 2. Stream Chunking
 
-- Als u materialen onder OpenListTeam/Logo moet gebruiken, kunt u deze wijzigen en gebruiken onder naleving van de overeenkomst.
+Ontworpen voor maximale prestaties en minimaal resourcegebruik. Kernconcept: **"zero-copy pipe"**.
 
-Dank u voor uw ondersteuning en begrip
+- **Workflow**:
+  1. **Frontend streaming**: Frontend splitst het bestand logisch en stuurt `Raw Binary` via `PUT` met `Content-Range` headers.
+  2. **io.Pipe bridge**: Bij de eerste chunk maakt de backend een zero-buffer pipe (`io.Pipe`) aan en start onmiddellijk de opslag driver upload taak die vanuit de pipe leest.
+  3. **Zero-copy flow**: Volgende chunks schrijven naar dezelfde pipe. Data stroomt direct van "frontend verzoek" via "server geheugen" naar "cloud opslag".
+  4. **Automatische voltooiing**: Na de laatste chunk wordt de pipe gesloten en is de upload voltooid.
 
-## Functies
+- **Voordelen**:
+  - **Geen schijfgebruik**: Geen tijdelijke chunks, geen schijf merge.
+  - **Minimaal geheugen**: Door pipe back-pressure blijft geheugen op KB-niveau.
+  - **Hoge prestaties**: Direct streaming zonder I/O bottleneck.
+- **Let op**: Server fungeert als sync pipe; trage cloud snelheden zullen back-pressure uitoefenen op de client via TCP.
 
-- [x] Meerdere opslagmogelijkheden
-  - [x] Lokale opslag
-  - [x] [Aliyundrive](https://www.alipan.com)
-  - [x] OneDrive / Sharepoint ([Global](https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage), [CN](https://portal.partner.microsoftonline.cn), DE, US)
-  - [x] [189cloud](https://cloud.189.cn) (Persoonlijk, Familie)
-  - [x] [GoogleDrive](https://drive.google.com)
-  - [x] [123pan](https://www.123pan.com)
-  - [x] [FTP / SFTP](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
-  - [x] [PikPak](https://www.mypikpak.com)
-  - [x] [S3](https://aws.amazon.com/s3)
-  - [x] [Seafile](https://seafile.com)
-  - [x] [UPYUN Storage Service](https://www.upyun.com/products/file-storage)
-  - [x] [WebDAV](https://en.wikipedia.org/wiki/WebDAV)
-  - [x] Teambition([China](https://www.teambition.com), [Internationaal](https://us.teambition.com))
-  - [x] [MediaFire](https://www.mediafire.com)
-  - [x] [Mediatrack](https://www.mediatrack.cn)
-  - [x] [ProtonDrive](https://proton.me/drive)
-  - [x] [139yun](https://yun.139.com) (Persoonlijk, Familie, Groep)
-  - [x] [YandexDisk](https://disk.yandex.com)
-  - [x] [BaiduNetdisk](http://pan.baidu.com)
-  - [x] [Terabox](https://www.terabox.com/main)
-  - [x] [UC](https://drive.uc.cn)
-  - [x] [Quark](https://pan.quark.cn)
-  - [x] [Thunder](https://pan.xunlei.com)
-  - [x] [Lanzou](https://www.lanzou.com)
-  - [x] [ILanzou](https://www.ilanzou.com)
-  - [x] [Google photo](https://photos.google.com)
-  - [x] [Mega.nz](https://mega.nz)
-  - [x] [Baidu photo](https://photo.baidu.com)
-  - [x] [SMB](https://en.wikipedia.org/wiki/Server_Message_Block)
-  - [x] [115](https://115.com)
-  - [x] [Cloudreve](https://cloudreve.org)
-  - [x] [Dropbox](https://www.dropbox.com)
-  - [x] [FeijiPan](https://www.feijipan.com)
-  - [x] [dogecloud](https://www.dogecloud.com/product/oss)
-  - [x] [Azure Blob Storage](https://azure.microsoft.com/products/storage/blobs)
-  - [x] [Chaoxing](https://www.chaoxing.com)
-  - [x] [CNB](https://cnb.cool/)
-  - [x] [Degoo](https://degoo.com)
-  - [x] [Doubao](https://www.doubao.com)
-  - [x] [Febbox](https://www.febbox.com)
-  - [x] [GitHub](https://github.com)
-  - [x] [OpenList](https://github.com/OpenListTeam/OpenList)
-  - [x] [Teldrive](https://github.com/tgdrive/teldrive)
-  - [x] [Weiyun](https://www.weiyun.com)
-- [x] Eenvoudig te implementeren en direct te gebruiken
-- [x] Bestandsvoorbeeld (PDF, markdown, code, platte tekst, ...)
-- [x] Afbeeldingsvoorbeeld in galerijweergave
-- [x] Video- en audiovoorbeeld, ondersteuning voor songteksten en ondertitels
-- [x] Office-documenten voorbeeld (docx, pptx, xlsx, ...)
-- [x] `README.md` voorbeeldweergave
-- [x] Permalink kopiëren en direct downloaden van bestanden
-- [x] Donkere modus
-- [x] I18n
-- [x] Beschermde routes (wachtwoordbeveiliging en authenticatie)
-- [x] WebDAV
-- [x] Docker implementatie
-- [x] Cloudflare Workers proxy
-- [x] Bestands-/map-pakket download
-- [x] Webupload (bezoekers kunnen uploaden toestaan), verwijderen, map aanmaken, hernoemen, verplaatsen en kopiëren
-- [x] Offline download
-- [x] Bestanden kopiëren tussen twee opslaglocaties
-- [x] Multi-thread downloadversnelling voor enkelvoudige download/stream
+---
 
-## Documentatie
+## Route Wijzigingen
 
-- 📘 [Documentatie](https://doc.oplist.org)
-- 🌏 [CN Mirror](https://doc.oplist.org.cn)
-- ⚖️ [Gebruiksvoorwaarden](https://doc.oplist.org/terms)
-- 🔒 [Privacybeleid](https://doc.oplist.org/privacy)
+| Route | Methode | Functie | Auth |
+|-------|---------|---------|------|
+| `/api/fs/put/chunk/init` | POST | Initialiseer chunk sessie | `FsUp` middleware |
+| `/api/fs/put/chunk` | PUT | Upload een chunk | `FsUp` + rate limiet |
+| `/api/fs/put/chunk/merge` | POST | Merge chunks en upload | `FsUp` + rate limiet |
+| `/api/fs/put` | PUT | Stream upload (ondersteunt Content-Range) | `FsUp` + rate limiet |
 
-## Demo
+---
 
-- 🌎 [Global Demo](https://demo.oplist.org)
-- 🇨🇳 [CN Demo](https://demo.oplist.org.cn)
+## Implementatie Gids
 
-## Discussie
+### Directe Vervanging (Volledig Compatibel met OpenList Data)
 
-Stel algemene vragen in [*Discussions*](https://github.com/OpenListTeam/OpenList/discussions), ***Issues* zijn alleen voor bugmeldingen en feature requests.**
+1. Stop je OpenList service
+2. Backup het originele `openlist` binary
+3. Vervang met het gecompileerde `openlist` binary
+4. Start de service
 
-## Sponsoren
+```bash
+systemctl stop openlist
+cp openlist /opt/openlist/openlist
+chmod +x /opt/openlist/openlist
+systemctl start openlist
+```
 
-[![VPS.Town](https://vps.town/static/images/sponsor.png)](https://vps.town "VPS.Town - Trust, Effortlessly. Your Cloud, Reimagined.")
+### Bouw vanuit Broncode
 
-## Licentie
+```bash
+git clone https://github.com/zmabin/OpenList_Chunk.git
+cd OpenList_Chunk
 
-`OpenList` is open-source software onder de [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) licentie.
+# Download frontend assets
+bash build.sh dev web
 
-## Disclaimer
+# Bouw (Linux)
+export CGO_ENABLED=0
+go build -o openlist -tags=jsoniter -ldflags="-s -w" .
 
-- Dit project is gratis en open-source software, ontworpen om het delen van bestanden via netdisks te vergemakkelijken, voornamelijk bedoeld ter ondersteuning van het downloaden en leren van de programmeertaal Go.
-- Houd u bij het gebruik van deze software aan alle toepasselijke wetten en voorschriften. Elk misbruik is ten strengste verboden.
-- De software is gebaseerd op officiële SDK's of API's zonder enige wijziging, verstoring of beïnvloeding van hun gedrag.
-- Het voert alleen HTTP 302-omleidingen of verkeersdoorsturing uit en onderschept, slaat of wijzigt geen gebruikersgegevens.
-- Dit project is niet gelieerd aan enig officieel platform of dienstverlener.
-- De software wordt geleverd "zoals deze is", zonder enige vorm van garantie, expliciet of impliciet, inclusief maar niet beperkt tot garanties van verkoopbaarheid of geschiktheid voor een bepaald doel.
-- De beheerders zijn niet aansprakelijk voor enige directe of indirecte schade die voortvloeit uit het gebruik van of het onvermogen om deze software te gebruiken.
-- U bent zelf verantwoordelijk voor alle risico's die gepaard gaan met het gebruik van deze software, inclusief maar niet beperkt tot accountblokkades of downloadbeperkingen.
-- Dit project valt onder de [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) licentie. Zie het [LICENSE](./LICENSE) bestand voor details.
+# Bouw (Windows)
+set CGO_ENABLED=0
+go build -o openlist.exe -tags=jsoniter -ldflags="-s -w" .
+```
 
-## Contact
+### Docker
 
-- [@GitHub](https://github.com/OpenListTeam)
-- [Telegram Groep](https://t.me/OpenListTeam)
-- [Telegram Kanaal](https://t.me/OpenListOfficial)
+```bash
+# ghcr.io
+docker pull ghcr.io/zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data ghcr.io/zmabin/openlist-chunk:latest
 
-## Bijdragers
+# Docker Hub
+docker pull zmabin/openlist-chunk:latest
+docker run -d -p 5244:5244 -v ./data:/opt/openlist/data zmabin/openlist-chunk:latest
+```
 
-Wij danken de auteur [Xhofe](https://github.com/Xhofe) van het originele project [AlistGo/alist](https://github.com/AlistGo/alist) en alle andere bijdragers.
+### Nginx Proxy Config
 
-Dank aan deze geweldige mensen:
+Zie `conf.d/openlist.conf` voor de volledige configuratie. Belangrijkste instellingen:
 
-[![Contributors](https://contrib.rocks/image?repo=OpenListTeam/OpenList)](https://github.com/OpenListTeam/OpenList/graphs/contributors)
+```nginx
+client_max_body_size 102400m;       # 100GB max upload
+proxy_request_buffering off;         # Schakel request buffering uit (vereist voor streaming)
+proxy_send_timeout 86400s;           # 24-uur timeout
+```
+
+---
+
+## Instellingen
+
+| Sleutel | Type | Standaard | Beschrijving |
+|---------|------|-----------|-------------|
+| `chunked_upload_mode` | Select | `auto` | Chunk modus: `auto` / `disabled` |
+| `chunked_upload_chunk_size` | Number | `95` | Chunk drempelwaarde (MB), bestanden groter dan dit worden automatisch ge-chunked |
+
+---
+
+## Roadmap
+
+- [x] **Form Chunked Upload**: Sessie-gebaseerde multipart chunk + streaming merge
+- [x] **Stream Chunking**: Content-Range gebaseerde zero-copy pipe chunking
+- [x] **Geplande Storage Her-login**: Per-storage keep-alive via geforceerde wachtwoord herauthenticatie
+
+---
+
+## Met Dank aan
+
+Dit project verwijst naar en bouwt voort op het werk van de volgende uitstekende projecten:
+
+- Dank aan [LusiyAvA/openlist-chunk](https://github.com/LusiyAvA/openlist-chunk) voor de kernideeen en implementatie referentie voor chunked upload
+- Dank aan [OpenListTeam/OpenList](https://github.com/OpenListTeam/OpenList) voor het leveren van een stabiel en betrouwbaar fundamenteel raamwerk
+
+---
+
+## Ondersteuning
+
+Als dit project je helpt, overweeg dan een Star!
+
+Een bug gevonden of een suggestie? Open gerust een [Issue](https://github.com/zmabin/OpenList_Chunk/issues).
