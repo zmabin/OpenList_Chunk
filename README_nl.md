@@ -142,8 +142,8 @@ proxy_send_timeout 86400s;           # 24-uur timeout
 
 ## Roadmap
 
+- [x] **Stream Chunked Upload**: Content-Range gebaseerde zero-copy pipe chunking
 - [x] **Form Chunked Upload**: Sessie-gebaseerde multipart chunk + streaming merge
-- [x] **Stream Chunking**: Content-Range gebaseerde zero-copy pipe chunking
 - [x] **Geplande Storage Her-login**: Per-storage keep-alive via geforceerde wachtwoord herauthenticatie
 
 ---
