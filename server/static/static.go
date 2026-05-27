@@ -53,13 +53,13 @@ func initStatic() {
 // "Login Schedule" link in the admin sidebar as a sub-item under Tasks.
 //
 // The upstream SideMenuItemWithChildren (Tasks) renders:
-//   <Box>                          ← outer container (w=$full)
-//     <Flex onClick={toggle}>      ← header row (NOT an <a> tag)
+//   <Box>                          <- outer container (w=$full)
+//     <Flex onClick={toggle}>      <- header row (NOT an <a> tag)
 //       <HStack><Icon/><Heading>Tasks</Heading></HStack>
-//       <Icon as={BiSolidRightArrow}/>
+//       <Icon as={BiSolidRightArrow/>
 //     </Flex>
 //     <Show when={open()}>
-//       <Box pl="$2">              ← children container
+//       <Box pl="$2">              <- children container (only rendered when expanded)
 //         <VStack>
 //           <a href="/@manage/tasks/upload">...</a>
 //           ...
@@ -68,10 +68,8 @@ func initStatic() {
 //     </Show>
 //   </Box>
 //
-// Strategy:
-//   1. Find child <a> link (e.g. /@manage/tasks/upload) — works when expanded
-//   2. Fallback: find <h2> heading with "Tasks" text — works even when collapsed
-//   3. Last resort: find any <h2> in the sidebar container
+// Only injects when Tasks is expanded (child links exist in DOM).
+// The MutationObserver re-injects whenever the section is toggled open.
 const loginScheduleSidebarScript = `<script>
 (function(){
   var T={zh_CN:"定时登录",zh_TW:"定時登入",ja:"ログインスケジュール",ko:"로그인 스케줄"};
@@ -80,52 +78,24 @@ const loginScheduleSidebarScript = `<script>
   var base=location.pathname.replace(/\/@manage.*/,"");
   var href=base+"/@manage/login-schedule";
   var icon='<svg viewBox="0 0 512 512" width="16" height="16" fill="currentColor" style="flex-shrink:0;margin-right:8px"><path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 258 8zm0 448c-110.5 0-200-89.5-200-200S145.5 56 256 56s200 89.5 200 200-89.5 200-200 200zm61.8-104.4l-84.9-61.7c-3.1-2.3-4.9-5.9-4.9-9.7V116c0-6.6 5.4-12 12-12h10c6.6 0 12 5.4 12 12v141.4l72.9 53.2c5.4 3.9 6.5 11.4 2.6 16.8l-8.2 11.3c-3.9 5.4-11.4 6.5-16.8 2.6z"/></svg>';
-  function makeLink(cs){
+  function inject(){
+    if(document.querySelector("[data-fork-login-schedule]")) return false;
+    /* Find any task child link (e.g. /@manage/tasks/upload) */
+    var child=document.querySelector('a[href*="/@manage/tasks/"]');
+    if(!child) return false;
+    /* Copy styles from the existing child link */
+    var cs=getComputedStyle(child);
+    /* Create the Login Schedule link */
     var a=document.createElement("a");
     a.setAttribute("data-fork-login-schedule","1");
     a.href=href;
     a.innerHTML=icon+'<span style="flex:1">'+text+'</span>';
-    a.style.cssText="display:flex;align-items:center;padding:"+(cs?cs.padding:"6px 8px")+";padding-left:2em;border-radius:"+(cs?cs.borderRadius:"8px")+";font-size:"+(cs?cs.fontSize:"14px")+";color:inherit;text-decoration:none;transition:background .15s";
+    a.style.cssText="display:flex;align-items:center;padding:"+cs.padding+";border-radius:"+cs.borderRadius+";font-size:"+cs.fontSize+";color:inherit;text-decoration:none;transition:background .15s";
     a.onmouseenter=function(){this.style.backgroundColor="rgba(0,0,0,.05)"};
     a.onmouseleave=function(){this.style.backgroundColor="transparent"};
-    return a;
-  }
-  function insertAfter(outer,header,a){
-    if(header.nextSibling){outer.insertBefore(a,header.nextSibling);}
-    else{outer.appendChild(a);}
-  }
-  function inject(){
-    if(document.querySelector("[data-fork-login-schedule]")) return false;
-    /* Strategy 1: find task child link (works when Tasks section is expanded) */
-    var child=document.querySelector('a[href*="/@manage/tasks/"]');
-    if(child){
-      var outer=child;
-      for(var i=0;i<4;i++){if(!outer.parentElement)return false;outer=outer.parentElement;}
-      var header=outer.children[0];
-      if(header){insertAfter(outer,header,makeLink(getComputedStyle(child)));return true;}
-    }
-    /* Strategy 2: find heading with "Tasks" text (works even when collapsed).
-       The sidebar renders translated text (e.g. "任务" in Chinese, "Tasks" in English).
-       HopeUI Heading defaults to <h2>, but search h1-h6 to be safe. */
-    var taskLabels=["Tasks","任务","タスク","태스크","작업"];
-    var headings=document.querySelectorAll("h1,h2,h3,h4,h5,h6");
-    var heading=null;
-    for(var i=0;i<headings.length;i++){
-      var t=headings[i].textContent.trim();
-      for(var j=0;j<taskLabels.length;j++){if(t===taskLabels[j]){heading=headings[i];break;}}
-      if(heading)break;
-    }
-    if(heading){
-      var container=heading.parentElement.parentElement;
-      if(container){insertAfter(container,heading.parentElement,makeLink(null));return true;}
-    }
-    /* Strategy 3: find any heading in sidebar (last resort) */
-    var anyH=document.querySelector('h1,h2,h3,h4,h5,h6');
-    if(anyH){
-      var box=anyH.closest('[style*="width"]');
-      if(box&&box.parentElement){box.parentElement.appendChild(makeLink(null));return true;}
-    }
-    return false;
+    /* Append to the VStack that holds all task sub-items */
+    child.parentElement.appendChild(a);
+    return true;
   }
   if(inject()) return;
   var timer=setInterval(function(){if(inject())clearInterval(timer);},300);
@@ -223,10 +193,10 @@ func UpdateIndex() {
 func ManifestJSON(c *gin.Context) {
 	// Get site configuration to ensure consistent base path handling
 	siteConfig := getSiteConfig()
-	
+
 	// Get site title from settings
 	siteTitle := setting.GetStr(conf.SiteTitle)
-	
+
 	// Get logo from settings, use the first line (light theme logo)
 	logoSetting := setting.GetStr(conf.Logo)
 	logoUrl := strings.Split(logoSetting, "\n")[0]
@@ -256,7 +226,7 @@ func ManifestJSON(c *gin.Context) {
 
 	c.Header("Content-Type", "application/json")
 	c.Header("Cache-Control", "public, max-age=3600") // cache for 1 hour
-	
+
 	if err := json.NewEncoder(c.Writer).Encode(manifest); err != nil {
 		utils.Log.Errorf("Failed to encode manifest.json: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate manifest"})
@@ -270,7 +240,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 	initStatic()
 	initIndex(siteConfig)
 	folders := []string{"assets", "images", "streamer", "static"}
-	
+
 	if conf.Conf.Cdn == "" {
 		utils.Log.Debug("Setting up static file serving...")
 		r.Use(func(c *gin.Context) {
