@@ -90,7 +90,7 @@ const loginScheduleSidebarScript = `<script>
     a.setAttribute("data-fork-login-schedule","1");
     a.href=href;
     a.innerHTML=icon+'<span style="flex:1">'+text+'</span>';
-    a.style.cssText="display:flex;align-items:center;padding:"+cs.padding+";border-radius:"+cs.borderRadius+";font-size:"+cs.fontSize+";color:inherit;text-decoration:none;transition:background .15s";
+    a.style.cssText="display:flex;width:100%;align-items:center;padding:"+cs.padding+";border-radius:"+cs.borderRadius+";font-size:"+cs.fontSize+";font-weight:600;color:inherit;text-decoration:none;transition:background .15s";
     a.onmouseenter=function(){this.style.backgroundColor="rgba(0,0,0,.05)"};
     a.onmouseleave=function(){this.style.backgroundColor="transparent"};
     /* Append to the VStack that holds all task sub-items */
@@ -100,7 +100,7 @@ const loginScheduleSidebarScript = `<script>
   if(inject()) return;
   var timer=setInterval(function(){if(inject())clearInterval(timer);},300);
   setTimeout(function(){clearInterval(timer);},10000);
-  var obs=new MutationObserver(function(){inject()});
+  var obs=new MutationObserver(function(){requestAnimationFrame(inject)});
   obs.observe(document.getElementById("root")||document.body,{childList:true,subtree:true});
 })();
 </script>`
