@@ -51,6 +51,26 @@ func initStatic() {
 
 // loginScheduleSidebarScript is injected into ManageHtml to add a
 // "Login Schedule" link in the admin sidebar as a sub-item under Tasks.
+//
+// The upstream SideMenuItemWithChildren (Tasks) renders:
+//   <Box>                          ← outer container (w=$full)
+//     <Flex onClick={toggle}>      ← header row (NOT an <a> tag)
+//       <HStack><Icon/><Heading>Tasks</Heading></HStack>
+//       <Icon as={BiSolidRightArrow}/>
+//     </Flex>
+//     <Show when={open()}>
+//       <Box pl="$2">              ← children container
+//         <VStack>
+//           <a href="/@manage/tasks/upload">...</a>
+//           <a href="/@manage/tasks/copy">...</a>
+//           ...
+//         </VStack>
+//       </Box>
+//     </Show>
+//   </Box>
+//
+// Strategy: find a child <a> with href containing "/@manage/tasks/",
+// walk up 4 levels to the outer Box, then insert after the Flex header.
 const loginScheduleSidebarScript = `<script>
 (function(){
   var T={zh_CN:"定时登录",zh_TW:"定時登入",ja:"ログインスケジュール",ko:"로그인 스케줄"};
@@ -61,16 +81,18 @@ const loginScheduleSidebarScript = `<script>
   var icon='<svg viewBox="0 0 512 512" width="16" height="16" fill="currentColor" style="flex-shrink:0;margin-right:8px"><path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 258 8zm0 448c-110.5 0-200-89.5-200-200S145.5 56 256 56s200 89.5 200 200-89.5 200-200 200zm61.8-104.4l-84.9-61.7c-3.1-2.3-4.9-5.9-4.9-9.7V116c0-6.6 5.4-12 12-12h10c6.6 0 12 5.4 12 12v141.4l72.9 53.2c5.4 3.9 6.5 11.4 2.6 16.8l-8.2 11.3c-3.9 5.4-11.4 6.5-16.8 2.6z"/></svg>';
   function inject(){
     if(document.querySelector("[data-fork-login-schedule]")) return false;
-    /* Find the Tasks <a> element (exact path, no trailing slash/children) */
-    var links=document.querySelectorAll("a[href]");
-    var tasks=null;
-    for(var i=0;i<links.length;i++){
-      var h=links[i].getAttribute("href");
-      if(h&&h.indexOf("/@manage/tasks")!==-1&&h.indexOf("/@manage/tasks/")===-1){tasks=links[i];break;}
-    }
-    if(!tasks) return false;
-    /* Style the link to match existing sub-items */
-    var cs=getComputedStyle(tasks);
+    /* Find a task child link (e.g. /@manage/tasks/upload) */
+    var child=document.querySelector('a[href*="/@manage/tasks/"]');
+    if(!child) return false;
+    /* Walk up 4 levels: <a> → VStack → Box(pl) → Flex(header) → Box(outer) */
+    var outer=child;
+    for(var i=0;i<4;i++){if(!outer.parentElement)return false;outer=outer.parentElement;}
+    /* The Flex header is the first child of the outer Box */
+    var header=outer.children[0];
+    if(!header) return false;
+    /* Inherit styles from an existing task child link */
+    var cs=getComputedStyle(child);
+    /* Create the Login Schedule link */
     var a=document.createElement("a");
     a.setAttribute("data-fork-login-schedule","1");
     a.href=href;
@@ -78,25 +100,11 @@ const loginScheduleSidebarScript = `<script>
     a.style.cssText="display:flex;align-items:center;padding:"+cs.padding+";padding-left:2em;border-radius:"+cs.borderRadius+";font-size:"+cs.fontSize+";color:inherit;text-decoration:none;transition:background .15s";
     a.onmouseenter=function(){this.style.backgroundColor="rgba(0,0,0,.05)"};
     a.onmouseleave=function(){this.style.backgroundColor="transparent"};
-    /* Navigate from <a> → Flex (parent) → Box (grandparent) */
-    var flex=tasks.parentElement;
-    if(!flex) return false;
-    var box=flex.parentElement;
-    if(!box) return false;
-    /* Verify we're in a flex container (SideMenuItemWithChildren structure) */
-    var fc=getComputedStyle(flex);
-    if(fc.display!=="flex"){box=flex;flex=null;}
-    /* Insert as sub-item: between the Tasks header (Flex) and the children list.
-       Creates a wrapper div if needed to avoid being hidden with Show children. */
-    if(flex&&box){
-      var wrap=document.createElement("div");
-      wrap.setAttribute("data-fork-login-schedule","1");
-      wrap.style.cssText="padding:0 0 0 0";
-      wrap.appendChild(a);
-      box.insertBefore(wrap,flex.nextSibling);
+    /* Insert after the Flex header (always visible, even when children collapsed) */
+    if(header.nextSibling){
+      outer.insertBefore(a,header.nextSibling);
     }else{
-      var tgt=flex||box;
-      tgt.parentElement.insertBefore(a,tgt.nextSibling);
+      outer.appendChild(a);
     }
     return true;
   }
