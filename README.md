@@ -60,6 +60,21 @@ Designed for maximum performance and minimal resource usage. Core concept: **"ze
   - **High performance**: Direct streaming with no I/O bottleneck.
 - **Note**: Server acts as a sync pipe; slow cloud speeds will back-pressure the client via TCP.
 
+### 3. Scheduled Storage Re-login
+
+A per-storage keep-alive mechanism via forced password re-authentication.
+
+- **How it works**:
+  1. Set a login interval (minutes) for each storage via the management page.
+  2. At each interval, the system drops the old driver instance and strips all cached tokens.
+  3. A new driver instance is created — it finds no cached tokens and performs username/password login.
+  4. If password login fails, the system automatically falls back to token-based refresh using backed-up tokens.
+
+- **How to enable**:
+  1. Open `http://<host>:5244/@manage/login-schedule` (accessible from the admin sidebar under Tasks).
+  2. Set the login interval (minutes) for each storage. `0` = disabled.
+  3. Click Save.
+
 ---
 
 ## Route Changes
@@ -70,6 +85,7 @@ Designed for maximum performance and minimal resource usage. Core concept: **"ze
 | `/api/fs/put/chunk` | PUT | Upload a single chunk | `FsUp` + rate limit |
 | `/api/fs/put/chunk/merge` | POST | Merge chunks and upload | `FsUp` + rate limit |
 | `/api/fs/put` | PUT | Stream upload (supports Content-Range) | `FsUp` + rate limit |
+| `/@manage/login-schedule` | GET | Storage login schedule management page | Client-side token |
 
 ---
 
