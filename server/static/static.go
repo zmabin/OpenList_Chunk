@@ -62,15 +62,16 @@ func initStatic() {
 //       <Box pl="$2">              ← children container
 //         <VStack>
 //           <a href="/@manage/tasks/upload">...</a>
-//           <a href="/@manage/tasks/copy">...</a>
 //           ...
 //         </VStack>
 //       </Box>
 //     </Show>
 //   </Box>
 //
-// Strategy: find a child <a> with href containing "/@manage/tasks/",
-// walk up 4 levels to the outer Box, then insert after the Flex header.
+// Strategy:
+//   1. Find child <a> link (e.g. /@manage/tasks/upload) — works when expanded
+//   2. Fallback: find <h2> heading with "Tasks" text — works even when collapsed
+//   3. Last resort: find any <h2> in the sidebar container
 const loginScheduleSidebarScript = `<script>
 (function(){
   var T={zh_CN:"定时登录",zh_TW:"定時登入",ja:"ログインスケジュール",ko:"로그인 스케줄"};
@@ -79,34 +80,47 @@ const loginScheduleSidebarScript = `<script>
   var base=location.pathname.replace(/\/@manage.*/,"");
   var href=base+"/@manage/login-schedule";
   var icon='<svg viewBox="0 0 512 512" width="16" height="16" fill="currentColor" style="flex-shrink:0;margin-right:8px"><path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 258 8zm0 448c-110.5 0-200-89.5-200-200S145.5 56 256 56s200 89.5 200 200-89.5 200-200 200zm61.8-104.4l-84.9-61.7c-3.1-2.3-4.9-5.9-4.9-9.7V116c0-6.6 5.4-12 12-12h10c6.6 0 12 5.4 12 12v141.4l72.9 53.2c5.4 3.9 6.5 11.4 2.6 16.8l-8.2 11.3c-3.9 5.4-11.4 6.5-16.8 2.6z"/></svg>';
-  function inject(){
-    if(document.querySelector("[data-fork-login-schedule]")) return false;
-    /* Find a task child link (e.g. /@manage/tasks/upload) */
-    var child=document.querySelector('a[href*="/@manage/tasks/"]');
-    if(!child) return false;
-    /* Walk up 4 levels: <a> → VStack → Box(pl) → Flex(header) → Box(outer) */
-    var outer=child;
-    for(var i=0;i<4;i++){if(!outer.parentElement)return false;outer=outer.parentElement;}
-    /* The Flex header is the first child of the outer Box */
-    var header=outer.children[0];
-    if(!header) return false;
-    /* Inherit styles from an existing task child link */
-    var cs=getComputedStyle(child);
-    /* Create the Login Schedule link */
+  function makeLink(cs){
     var a=document.createElement("a");
     a.setAttribute("data-fork-login-schedule","1");
     a.href=href;
     a.innerHTML=icon+'<span style="flex:1">'+text+'</span>';
-    a.style.cssText="display:flex;align-items:center;padding:"+cs.padding+";padding-left:2em;border-radius:"+cs.borderRadius+";font-size:"+cs.fontSize+";color:inherit;text-decoration:none;transition:background .15s";
+    a.style.cssText="display:flex;align-items:center;padding:"+(cs?cs.padding:"6px 8px")+";padding-left:2em;border-radius:"+(cs?cs.borderRadius:"8px")+";font-size:"+(cs?cs.fontSize:"14px")+";color:inherit;text-decoration:none;transition:background .15s";
     a.onmouseenter=function(){this.style.backgroundColor="rgba(0,0,0,.05)"};
     a.onmouseleave=function(){this.style.backgroundColor="transparent"};
-    /* Insert after the Flex header (always visible, even when children collapsed) */
-    if(header.nextSibling){
-      outer.insertBefore(a,header.nextSibling);
-    }else{
-      outer.appendChild(a);
+    return a;
+  }
+  function insertAfter(outer,header,a){
+    if(header.nextSibling){outer.insertBefore(a,header.nextSibling);}
+    else{outer.appendChild(a);}
+  }
+  function inject(){
+    if(document.querySelector("[data-fork-login-schedule]")) return false;
+    /* Strategy 1: find task child link (works when Tasks section is expanded) */
+    var child=document.querySelector('a[href*="/@manage/tasks/"]');
+    if(child){
+      var outer=child;
+      for(var i=0;i<4;i++){if(!outer.parentElement)return false;outer=outer.parentElement;}
+      var header=outer.children[0];
+      if(header){insertAfter(outer,header,makeLink(getComputedStyle(child)));return true;}
     }
-    return true;
+    /* Strategy 2: find <h2> heading with "Tasks" text (works even when collapsed) */
+    var allH2=document.querySelectorAll("h2");
+    var heading=null;
+    for(var i=0;i<allH2.length;i++){
+      if(allH2[i].textContent.trim()==="Tasks"){heading=allH2[i];break;}
+    }
+    if(heading){
+      var container=heading.parentElement.parentElement;
+      if(container){insertAfter(container,heading.parentElement,makeLink(null));return true;}
+    }
+    /* Strategy 3: find any <h2> in sidebar (last resort) */
+    var h2=document.querySelector('h2');
+    if(h2){
+      var box=h2.closest('[style*="width"]');
+      if(box&&box.parentElement){box.parentElement.appendChild(makeLink(null));return true;}
+    }
+    return false;
   }
   if(inject()) return;
   var timer=setInterval(function(){if(inject())clearInterval(timer);},300);
