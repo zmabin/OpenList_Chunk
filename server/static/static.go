@@ -104,20 +104,25 @@ const loginScheduleSidebarScript = `<script>
       var header=outer.children[0];
       if(header){insertAfter(outer,header,makeLink(getComputedStyle(child)));return true;}
     }
-    /* Strategy 2: find <h2> heading with "Tasks" text (works even when collapsed) */
-    var allH2=document.querySelectorAll("h2");
+    /* Strategy 2: find heading with "Tasks" text (works even when collapsed).
+       The sidebar renders translated text (e.g. "任务" in Chinese, "Tasks" in English).
+       HopeUI Heading defaults to <h2>, but search h1-h6 to be safe. */
+    var taskLabels=["Tasks","任务","タスク","태스크","작업"];
+    var headings=document.querySelectorAll("h1,h2,h3,h4,h5,h6");
     var heading=null;
-    for(var i=0;i<allH2.length;i++){
-      if(allH2[i].textContent.trim()==="Tasks"){heading=allH2[i];break;}
+    for(var i=0;i<headings.length;i++){
+      var t=headings[i].textContent.trim();
+      for(var j=0;j<taskLabels.length;j++){if(t===taskLabels[j]){heading=headings[i];break;}}
+      if(heading)break;
     }
     if(heading){
       var container=heading.parentElement.parentElement;
       if(container){insertAfter(container,heading.parentElement,makeLink(null));return true;}
     }
-    /* Strategy 3: find any <h2> in sidebar (last resort) */
-    var h2=document.querySelector('h2');
-    if(h2){
-      var box=h2.closest('[style*="width"]');
+    /* Strategy 3: find any heading in sidebar (last resort) */
+    var anyH=document.querySelector('h1,h2,h3,h4,h5,h6');
+    if(anyH){
+      var box=anyH.closest('[style*="width"]');
       if(box&&box.parentElement){box.parentElement.appendChild(makeLink(null));return true;}
     }
     return false;
