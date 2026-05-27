@@ -67,6 +67,7 @@ jobs:
             "server/handles/fsup_chunk.go"
             "server/handles/login_schedule.go"
             "server/router.go"
+            "server/static/static.go"
             "internal/model/storage.go"
             "internal/op/storage.go"
             "internal/conf/const.go"
