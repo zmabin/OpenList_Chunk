@@ -173,7 +173,7 @@ jobs:
             - **openlist-windows-amd64.exe** — Windows x86_64
             - **openlist-windows-arm64.exe** — Windows ARM64
           files: release-assets/**/*
-          draft: true
+          draft: false
           prerelease: false
           generate_release_notes: false
         env:
