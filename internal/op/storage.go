@@ -14,7 +14,6 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
-	"github.com/OpenListTeam/OpenList/v4/pkg/cron"
 	"github.com/OpenListTeam/OpenList/v4/pkg/generic_sync"
 	"github.com/OpenListTeam/OpenList/v4/pkg/singleflight"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
@@ -26,7 +25,6 @@ import (
 // there is a storage in each driver,
 // so it should actually be a storage, just wrapped by the driver
 var storagesMap generic_sync.MapOf[string, driver.Driver]
-var loginCronMap generic_sync.MapOf[uint, *cron.Cron]
 
 func GetAllStorages() []driver.Driver {
 	return storagesMap.Values()
@@ -66,7 +64,6 @@ func CreateStorage(ctx context.Context, storage model.Storage) (uint, error) {
 	// already has an id
 	err = initStorage(ctx, storage, storageDriver)
 	go callStorageHooks("add", storageDriver)
-	go startLoginCron(storageDriver)
 	if err != nil {
 		return storage.ID, errors.Wrap(err, "failed init storage but storage is already created")
 	}
@@ -87,7 +84,6 @@ func LoadStorage(ctx context.Context, storage model.Storage) error {
 
 	err = initStorage(ctx, storage, storageDriver)
 	go callStorageHooks("add", storageDriver)
-	go startLoginCron(storageDriver)
 	log.Debugf("storage %+v is created", storageDriver)
 	return err
 }
@@ -204,7 +200,6 @@ func DisableStorage(ctx context.Context, id uint) error {
 	if err != nil {
 		return errors.WithMessage(err, "failed get storage driver")
 	}
-	stopLoginCron(storage.ID)
 	// drop the storage in the driver
 	if err := storageDriver.Drop(ctx); err != nil {
 		return errors.Wrap(err, "failed drop storage")
@@ -251,7 +246,6 @@ func UpdateStorage(ctx context.Context, storage model.Storage) error {
 	if err != nil {
 		return errors.WithMessage(err, "failed get storage driver")
 	}
-	stopLoginCron(storage.ID)
 	err = storageDriver.Drop(ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed drop storage")
@@ -259,7 +253,6 @@ func UpdateStorage(ctx context.Context, storage model.Storage) error {
 
 	err = initStorage(ctx, storage, storageDriver)
 	go callStorageHooks("update", storageDriver)
-	go startLoginCron(storageDriver)
 	log.Debugf("storage %+v is update", storageDriver)
 	return err
 }
@@ -275,7 +268,6 @@ func DeleteStorageById(ctx context.Context, id uint) error {
 		if err != nil {
 			return errors.WithMessage(err, "failed get storage driver")
 		}
-		stopLoginCron(id)
 		// drop the storage in the driver
 		if err := storageDriver.Drop(ctx); err != nil {
 			dropErr = errors.Wrapf(err, "failed drop storage")
@@ -495,106 +487,4 @@ func GetStorageDetails(ctx context.Context, storage driver.Driver, refresh ...bo
 		return ret, nil
 	})
 	return details, err
-}
-
-// tokenFields are Addition JSON fields to clear for forcing password login
-var tokenFields = []string{
-	"refresh_token", "access_token", "authorization",
-	"access_token_expire_time", "token_type",
-}
-
-// stripTokenFields removes cached token fields from Addition JSON,
-// forcing the driver to fall back to username/password login.
-func stripTokenFields(additionJSON string) string {
-	var m map[string]interface{}
-	if err := utils.Json.UnmarshalFromString(additionJSON, &m); err != nil {
-		return additionJSON
-	}
-	for _, f := range tokenFields {
-		delete(m, f)
-	}
-	str, err := utils.Json.MarshalToString(m)
-	if err != nil {
-		return additionJSON
-	}
-	return str
-}
-
-func startLoginCron(storageDriver driver.Driver) {
-	storage := storageDriver.GetStorage()
-	if storage.LoginInterval <= 0 {
-		return
-	}
-	storageID := storage.ID
-	stopLoginCron(storageID)
-	interval := time.Duration(storage.LoginInterval) * time.Minute
-	c := cron.NewCron(interval)
-	loginCronMap.Store(storageID, c)
-	c.Do(func() {
-		currentStorage := storageDriver.GetStorage()
-		storageID := currentStorage.ID
-		mountPath := currentStorage.MountPath
-		driverName := currentStorage.Driver
-		log.Infof("scheduled re-login triggered for storage %d [%s]", storageID, mountPath)
-		freshStorage, err := db.GetStorageById(storageID)
-		if err != nil {
-			log.Errorf("scheduled re-login: failed to get storage %d from db: %s", storageID, err)
-			return
-		}
-		if freshStorage.Disabled {
-			log.Infof("scheduled re-login: storage %d is disabled, stopping cron", storageID)
-			stopLoginCron(storageID)
-			return
-		}
-		// Drop old driver (stops internal crons, clears all session state)
-		if oldDriver, err := GetStorageByMountPath(mountPath); err == nil {
-			if err := oldDriver.Drop(context.Background()); err != nil {
-				log.Errorf("scheduled re-login: failed to drop storage %d: %s", storageID, err)
-			}
-		}
-		// Backup original Addition for fallback
-		originalAddition := freshStorage.Addition
-		// Strip cached tokens to force password login
-		freshStorage.Addition = stripTokenFields(freshStorage.Addition)
-		// Create brand new driver instance and try password login
-		driverNew, err := GetDriver(driverName)
-		if err != nil {
-			log.Errorf("scheduled re-login: failed to get driver for storage %d: %s", storageID, err)
-			return
-		}
-		newDriver := driverNew()
-		err = initStorage(context.Background(), *freshStorage, newDriver)
-		if err != nil {
-			// Password login failed, fallback to token-based re-login
-			log.Warnf("scheduled re-login: password login failed for storage %d, falling back to token refresh: %s", storageID, err)
-			freshStorage.Addition = originalAddition
-			driverNew2, err2 := GetDriver(driverName)
-			if err2 != nil {
-				log.Errorf("scheduled re-login: fallback failed to get driver for storage %d: %s", storageID, err2)
-				return
-			}
-			newDriver2 := driverNew2()
-			if err2 = initStorage(context.Background(), *freshStorage, newDriver2); err2 != nil {
-				log.Errorf("scheduled re-login: fallback token refresh also failed for storage %d: %s", storageID, err2)
-			} else {
-				log.Infof("scheduled re-login: fallback token refresh succeeded for storage %d [%s]", storageID, mountPath)
-			}
-		} else {
-			log.Infof("scheduled re-login: successfully password-logged-in storage %d [%s]", storageID, mountPath)
-		}
-	})
-}
-
-func stopLoginCron(id uint) {
-	if c, ok := loginCronMap.Load(id); ok {
-		c.Stop()
-		loginCronMap.Delete(id)
-	}
-}
-
-func StopAllLoginCrons() {
-	loginCronMap.Range(func(id uint, c *cron.Cron) bool {
-		c.Stop()
-		return true
-	})
 }

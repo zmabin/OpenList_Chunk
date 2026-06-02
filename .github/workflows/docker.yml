@@ -5,6 +5,10 @@ on:
     branches: ["main"]
     tags:
       - "v*"
+  workflow_run:
+    workflows: ["Sync Upstream"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +21,7 @@ env:
 jobs:
   prepare-frontend:
     name: Build frontend
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name != 'workflow_run' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

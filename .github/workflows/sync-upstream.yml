@@ -2,7 +2,7 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 2 1,15 * *'  # 1st and 15th of each month at 02:00 UTC
+    - cron: '0 2 */3 * *'  # Every 3 days at 02:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -45,6 +45,14 @@ jobs:
           # Save our fork's SHA to restore fork-only files after merge
           OUR_SHA=$(git rev-parse HEAD)
 
+          # Check if there's anything new to sync
+          NEW_COMMITS=$(git rev-list --count HEAD..upstream/main)
+          if [ "$NEW_COMMITS" = "0" ]; then
+            echo "Already up to date with upstream, nothing to sync."
+            exit 0
+          fi
+          echo "Found $NEW_COMMITS new upstream commit(s)."
+
           # Files that are fork-specific and must never come from upstream
           FORK_ONLY_FILES=(
             "CLAUDE.md"
@@ -65,7 +73,6 @@ jobs:
           CHUNK_FILES=(
             "server/handles/fsup.go"
             "server/handles/fsup_chunk.go"
-            "server/handles/login_schedule.go"
             "server/router.go"
             "server/static/static.go"
             "internal/model/storage.go"
@@ -155,6 +162,34 @@ jobs:
           # Amend commit with upstream version info
           git commit --amend -m "chore: sync upstream (${UPSTREAM_INFO})" --no-verify
           git push origin HEAD:refs/heads/main
+
+      - name: Propagate upstream release tag
+        if: steps.merge.outputs.result == 'synced'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the latest upstream release via GitHub API
+          UPSTREAM_RELEASE=$(gh api repos/OpenListTeam/OpenList/releases/latest \
+            --jq '.tag_name' 2>/dev/null || true)
+          if [ -z "$UPSTREAM_RELEASE" ]; then
+            echo "No upstream release found, skipping."
+            exit 0
+          fi
+          echo "Latest upstream release: $UPSTREAM_RELEASE"
+          # Check if we already have this tag locally
+          if git rev-parse "refs/tags/$UPSTREAM_RELEASE" >/dev/null 2>&1; then
+            echo "Tag $UPSTREAM_RELEASE already exists locally, skipping."
+            exit 0
+          fi
+          # Check if tag exists on remote (catches fresh checkout without tags)
+          if git ls-remote --tags origin "refs/tags/$UPSTREAM_RELEASE" | grep -q "refs/tags/$UPSTREAM_RELEASE"; then
+            echo "Tag $UPSTREAM_RELEASE already exists on remote, skipping."
+            exit 0
+          fi
+          echo "Creating tag $UPSTREAM_RELEASE at HEAD"
+          git tag "$UPSTREAM_RELEASE" HEAD
+          git push origin "refs/tags/$UPSTREAM_RELEASE"
+          echo "Tag $UPSTREAM_RELEASE pushed — release workflow will trigger."
 
       - name: Create issue on failure
         if: failure()

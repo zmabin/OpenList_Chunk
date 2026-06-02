@@ -60,21 +60,6 @@ Ontworpen voor maximale prestaties en minimaal resourcegebruik. Kernconcept: **"
   - **Hoge prestaties**: Direct streaming zonder I/O bottleneck.
 - **Let op**: Server fungeert als sync pipe; trage cloud snelheden zullen back-pressure uitoefenen op de client via TCP.
 
-### 3. Geplande Storage Her-login
-
-Een per-storage keep-alive mechanisme via geforceerde wachtwoord herauthenticatie.
-
-- **Hoe het werkt**:
-  1. Stel een login interval (minuten) in voor elke storage via de beheerpagina.
-  2. Bij elk interval verwijdert het systeem de oude driver instantie en wist alle cached tokens.
-  3. Een nieuwe driver instantie wordt aangemaakt — vindt geen cached tokens en voert gebruikersnaam/wachtwoord login uit.
-  4. Als wachtwoord login faalt, valt het systeem automatisch terug op token-gebaseerde vernieuwing met back-up tokens.
-
-- **Hoe inschakelen**:
-  1. Open `http://<host>:5244/@manage/login-schedule` (ook bereikbaar via de admin zijbalk onder Taken).
-  2. Stel het login interval (minuten) in voor elke storage. `0` = uitgeschakeld.
-  3. Klik op Opslaan.
-
 ---
 
 ## Route Wijzigingen
@@ -85,7 +70,6 @@ Een per-storage keep-alive mechanisme via geforceerde wachtwoord herauthenticati
 | `/api/fs/put/chunk` | PUT | Upload een chunk | `FsUp` + rate limiet |
 | `/api/fs/put/chunk/merge` | POST | Merge chunks en upload | `FsUp` + rate limiet |
 | `/api/fs/put` | PUT | Stream upload (ondersteunt Content-Range) | `FsUp` + rate limiet |
-| `/@manage/login-schedule` | GET | Storage login schema beheerpagina | Client-side token |
 
 ---
 
@@ -160,7 +144,6 @@ proxy_send_timeout 86400s;           # 24-uur timeout
 
 - [x] **Stream Chunked Upload**: Content-Range gebaseerde zero-copy pipe chunking
 - [x] **Form Chunked Upload**: Sessie-gebaseerde multipart chunk + streaming merge
-- [x] **Geplande Storage Her-login**: Per-storage keep-alive via geforceerde wachtwoord herauthenticatie
 
 ---
 
