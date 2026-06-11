@@ -29,7 +29,7 @@ jobs:
         run: git remote add upstream https://github.com/OpenListTeam/OpenList.git
 
       - name: Fetch upstream
-        run: git fetch upstream
+        run: git fetch --no-tags upstream
 
       - name: Capture upstream version info
         id: upstream-info
